@@ -2,83 +2,56 @@
 Carrera de Caballos — Baraja Española
 App Streamlit lista para desplegar en Render
 """
-import base64, io, os
+import base64, os
 import streamlit as st
-from PIL import Image
-from svglib.svglib import svg2rlg
-from reportlab.graphics import renderPM
 from src.game import CarreraEspanola, TRACK_LEN
 from src.model import SUITS, RANK_NAMES, Card
 
 # ── Rutas ──────────────────────────────────────────────────────────────────
+# Siempre relativo al directorio donde se corre: streamlit run app.py
 BASE_DIR      = os.path.abspath(".")
-SVG_DIR       = os.path.join(BASE_DIR, "assets", "svg")
 PNG_CACHE_DIR = os.path.join(BASE_DIR, "assets", "png_cache")
-os.makedirs(PNG_CACHE_DIR, exist_ok=True)
 
 SVG_KEYS = {"Oros": "coins", "Copas": "cups", "Espadas": "swords", "Bastos": "clubs"}
 
-# ── Carga de imágenes (igual que Tkinter) ──────────────────────────────────
-def _svg_name(card: Card) -> str:
-    return f"card_{SVG_KEYS[card.suit]}_{card.rank:02d}.svg"
+# ── Imágenes ───────────────────────────────────────────────────────────────
+# Nombres reales en disco: card_coins_01.svg_88x124.png
+def _png_path(card: Card, size: str) -> str:
+    name = f"card_{SVG_KEYS[card.suit]}_{card.rank:02d}.svg_{size}.png"
+    return os.path.join(PNG_CACHE_DIR, name)
 
-def _svg_to_png(svg_path: str, png_path: str, w: int, h: int):
-    drawing = svg2rlg(svg_path)
-    if drawing and drawing.width and drawing.height:
-        sx = w / drawing.width
-        sy = h / drawing.height
-        drawing.scale(sx, sy)
-        drawing.width  = w
-        drawing.height = h
-    renderPM.drawToFile(drawing, png_path, fmt="PNG")
+def _back_path(size: str) -> str:
+    return os.path.join(PNG_CACHE_DIR, f"card_back.svg_{size}.png")
 
-def _get_pil(svg_filename: str, w: int, h: int):
-    svg_path = os.path.join(SVG_DIR, svg_filename)
-    if not os.path.exists(svg_path):
+def _b64(path: str) -> str | None:
+    if not os.path.exists(path):
         return None
-    key      = f"{svg_filename}_{w}x{h}"
-    png_path = os.path.join(PNG_CACHE_DIR, f"{key}.png")
-    if not os.path.exists(png_path):
-        try:
-            _svg_to_png(svg_path, png_path, w, h)
-        except Exception:
-            return None
-    try:
-        return Image.open(png_path).convert("RGBA")
-    except Exception:
-        return None
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
 
-def _card_pil(card: Card, w: int, h: int):
-    return _get_pil(_svg_name(card), w, h)
-
-def _back_pil(w: int, h: int):
-    return _get_pil("card_back.svg", w, h)
-
-def _to_b64(img: Image.Image) -> str:
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode()
-
-def card_img_html(card: Card, w: int, h: int, border_color: str = "#3A3A55") -> str:
-    img = _card_pil(card, w, h)
-    if img:
-        return (f'<img src="data:image/png;base64,{_to_b64(img)}" width="{w}" '
+def card_img_html(card: Card, size: str, width: int, border_color: str = "#3A3A55") -> str:
+    b64 = _b64(_png_path(card, size))
+    if b64:
+        return (f'<img src="data:image/png;base64,{b64}" width="{width}" '
                 f'style="border-radius:6px;border:2px solid {border_color};display:block">')
+    # fallback texto
     sym   = SUIT_SYMBOLS.get(card.suit, "?")
     color = SUIT_COLORS.get(card.suit, "#fff")
     rname = RANK_NAMES.get(card.rank, str(card.rank))
-    return (f'<div style="width:{w}px;height:{h}px;background:#1A1A24;'
+    h = int(width * 1.4)
+    return (f'<div style="width:{width}px;height:{h}px;background:#1A1A24;'
             f'border:1px solid {border_color};border-radius:6px;display:flex;'
             f'flex-direction:column;align-items:center;justify-content:center">'
-            f'<div style="font-size:1.8rem;color:{color}">{sym}</div>'
-            f'<div style="font-size:.75rem;color:{color}">{rname}</div></div>')
+            f'<div style="font-size:1.4rem;color:{color}">{sym}</div>'
+            f'<div style="font-size:.7rem;color:{color}">{rname}</div></div>')
 
-def back_img_html(w: int, h: int) -> str:
-    img = _back_pil(w, h)
-    if img:
-        return (f'<img src="data:image/png;base64,{_to_b64(img)}" width="{w}" '
+def back_img_html(size: str, width: int) -> str:
+    b64 = _b64(_back_path(size))
+    if b64:
+        return (f'<img src="data:image/png;base64,{b64}" width="{width}" '
                 f'style="border-radius:6px;border:1px solid #3A3A55;display:block">')
-    return (f'<div style="width:{w}px;height:{h}px;background:#1A1A24;'
+    h = int(width * 1.4)
+    return (f'<div style="width:{width}px;height:{h}px;background:#1A1A24;'
             f'border:1px solid #3A3A55;border-radius:6px;display:flex;'
             f'align-items:center;justify-content:center;font-size:2rem;color:#2A2A3D">🂠</div>')
 
@@ -152,7 +125,8 @@ def _init_state():
     defaults = {"game": None, "players": [], "suit_to_player": {}, "log": [],
                 "last_card": None, "setup_done": False, "game_over": False, "winner_suit": None}
     for k, v in defaults.items():
-        if k not in st.session_state: st.session_state[k] = v
+        if k not in st.session_state:
+            st.session_state[k] = v
 
 _init_state()
 
@@ -161,7 +135,8 @@ def add_log(msg: str, tag: str = "event"):
 
 def progress_html(pos: int, color: str) -> str:
     pct = int(pos / TRACK_LEN * 100)
-    return (f'<div class="progress-bar-bg"><div class="progress-bar-fill" style="width:{pct}%;background:{color}"></div></div>'
+    return (f'<div class="progress-bar-bg"><div class="progress-bar-fill" '
+            f'style="width:{pct}%;background:{color}"></div></div>'
             f'<div style="font-size:0.75rem;color:#5A5875;margin-top:2px">{pos} / {TRACK_LEN}</div>')
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -174,6 +149,7 @@ def render_sidebar():
         n_horses  = st.radio("Caballos", [3, 4], horizontal=True, key="sb_nh",
                              help="Con 3 caballos, uno queda fuera de la carrera")
         st.markdown('<div class="section-title" style="margin-top:1rem">JUGADORES</div>', unsafe_allow_html=True)
+
         players_cfg = []; used_suits = []; valid = True
         for i in range(n_players):
             color = PLAYER_COLORS[i]
@@ -185,14 +161,17 @@ def render_sidebar():
             suit = st.selectbox("Caballo", available, key=f"sb_suit_{i}", label_visibility="collapsed")
             used_suits.append(suit)
             players_cfg.append({"name": name.strip() or PLAYER_LABELS[i], "suit": suit, "color": color})
+
         st.markdown("---")
         if valid:
             if st.button("⚑  INICIAR CARRERA", use_container_width=True):
-                _start_game(players_cfg, n_horses); st.rerun()
+                _start_game(players_cfg, n_horses)
+                st.rerun()
         if st.session_state.setup_done:
             st.markdown('<div class="btn-sec">', unsafe_allow_html=True)
             if st.button("↺  Reiniciar partida", use_container_width=True):
-                _start_game(players_cfg, n_horses); st.rerun()
+                _start_game(players_cfg, n_horses)
+                st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
 def _start_game(players_cfg: list, n_horses: int):
@@ -222,9 +201,9 @@ def render_checkpoints(game: CarreraEspanola):
             if game.revealed[i]:
                 card  = game.checkpoints[i]
                 color = SUIT_COLORS.get(card.suit, "#fff")
-                img   = card_img_html(card, 80, 112, color + "99")
+                img   = card_img_html(card, "88x124", 80, color + "99")
             else:
-                img = back_img_html(80, 112)
+                img = back_img_html("88x124", 80)
             st.markdown(
                 f'<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
                 f'{img}<div style="font-size:0.6rem;color:#7A5E20;font-family:Cinzel,serif">{i+1}</div>'
@@ -250,9 +229,11 @@ def render_lanes(game: CarreraEspanola, suit_to_player: dict):
             with col:
                 is_horse = (p == pos); is_meta = (p == TRACK_LEN)
                 if is_horse and not is_meta:
-                    horse_img = _card_pil(Card(rank=11, suit=suit), 36, 50)
-                    content = (f'<img src="data:image/png;base64,{_to_b64(horse_img)}" width="34" style="border-radius:4px;display:block">'
-                               if horse_img else f'<div style="font-size:1.4rem">{sym}</div>')
+                    horse_b64 = _b64(_png_path(Card(rank=11, suit=suit), "64x90"))
+                    if not horse_b64:
+                        horse_b64 = _b64(_png_path(Card(rank=11, suit=suit), "88x124"))
+                    content = (f'<img src="data:image/png;base64,{horse_b64}" width="34" style="border-radius:4px;display:block">'
+                               if horse_b64 else f'<div style="font-size:1.4rem">{sym}</div>')
                     bg = f"background:{color}33"
                 elif is_meta:
                     bg = f"background:{color}22;border-left:3px solid {color}"
@@ -260,7 +241,8 @@ def render_lanes(game: CarreraEspanola, suit_to_player: dict):
                 else:
                     bg = ""; content = f'<div style="color:#2A2A3D;font-size:0.58rem">{p}</div>'
                 st.markdown(f'<div style="height:44px;display:flex;align-items:center;justify-content:center;'
-                            f'border-right:1px solid #1E1E2C;border-radius:3px;{bg}">{content}</div>', unsafe_allow_html=True)
+                            f'border-right:1px solid #1E1E2C;border-radius:3px;{bg}">{content}</div>',
+                            unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════
 # Panel jugadores
@@ -276,7 +258,8 @@ def render_players_panel(game: CarreraEspanola, players: list):
         bw   = "4px" if pos == leader_pos and pos > 0 else "3px"
         st.markdown(f'<div class="player-card" style="border-left:{bw} solid {color};{glow}">'
                     f'<div style="font-size:1rem;font-weight:700;color:{color}">{p["name"]}</div>'
-                    f'<div style="font-size:0.8rem;color:#9D9BB5;margin-bottom:4px">{sym} <span style="color:{sc}">{suit}</span></div>'
+                    f'<div style="font-size:0.8rem;color:#9D9BB5;margin-bottom:4px">'
+                    f'{sym} <span style="color:{sc}">{suit}</span></div>'
                     f'{progress_html(pos, color)}</div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -285,20 +268,25 @@ def render_players_panel(game: CarreraEspanola, players: list):
 def render_last_card(card):
     st.markdown('<div class="section-title">ÚLTIMA CARTA</div>', unsafe_allow_html=True)
     if card is None:
-        st.markdown(f'<div style="text-align:center">{back_img_html(180, 252)}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="text-align:center">{back_img_html("240x340", 180)}</div>',
+                    unsafe_allow_html=True)
         return
-    color = SUIT_COLORS.get(card.suit, "#fff"); rname = RANK_NAMES.get(card.rank, str(card.rank))
-    st.markdown(f'<div style="text-align:center">{card_img_html(card, 180, 252, color+"99")}'
-                f'<div style="font-size:1rem;font-weight:600;color:#F0EDE8;margin-top:6px">{rname} de {card.suit}</div></div>',
-                unsafe_allow_html=True)
+    color = SUIT_COLORS.get(card.suit, "#fff")
+    rname = RANK_NAMES.get(card.rank, str(card.rank))
+    img   = card_img_html(card, "240x340", 180, color + "99")
+    st.markdown(f'<div style="text-align:center">{img}'
+                f'<div style="font-size:1rem;font-weight:600;color:#F0EDE8;margin-top:6px">'
+                f'{rname} de {card.suit}</div></div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════
 # Registro
 # ══════════════════════════════════════════════════════════════════════════
 def render_log(log_entries: list):
     st.markdown('<div class="section-title" style="margin-top:1rem">REGISTRO</div>', unsafe_allow_html=True)
-    tag_cls = {"header": "log-header", "event": "log-event", "cp": "log-cp", "penalty": "log-penalty", "winner": "log-winner"}
-    rows = "".join(f'<div class="log-entry {tag_cls.get(t,"log-event")}">{m}</div>' for m, t in reversed(log_entries[-50:]))
+    tag_cls = {"header": "log-header", "event": "log-event", "cp": "log-cp",
+               "penalty": "log-penalty", "winner": "log-winner"}
+    rows = "".join(f'<div class="log-entry {tag_cls.get(t,"log-event")}">{m}</div>'
+                   for m, t in reversed(log_entries[-50:]))
     st.markdown(f'<div class="log-box">{rows}</div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -310,7 +298,8 @@ def render_winner_banner(winner_suit: str, game: CarreraEspanola, players: list,
     p_color = owner["color"] if owner else color
     st.markdown(f'<div class="winner-banner"><div class="winner-title">★ CARRERA FINALIZADA ★</div>'
                 f'<div class="winner-name" style="color:{p_color}">{name}</div>'
-                f'<div class="winner-horse" style="color:{color}">{sym}  {winner_suit}</div></div>', unsafe_allow_html=True)
+                f'<div class="winner-horse" style="color:{color}">{sym}  {winner_suit}</div></div>',
+                unsafe_allow_html=True)
     if players:
         st.markdown('<div class="section-title">CLASIFICACIÓN FINAL</div>', unsafe_allow_html=True)
         for rank, p in enumerate(sorted(players, key=lambda p: game.positions.get(p["suit"], 0), reverse=True)):
@@ -337,18 +326,22 @@ def do_step():
     sym = SUIT_SYMBOLS.get(info.drawn.suit, "")
     if info.advanced_suit:
         owner = stp.get(info.advanced_suit)
-        add_log(f"  {sym} {info.drawn.name}  →  avanza {info.advanced_suit}{' ('+owner['name']+')' if owner else ''}", "event")
+        add_log(f"  {sym} {info.drawn.name}  →  avanza {info.advanced_suit}"
+                f"{' ('+owner['name']+')' if owner else ''}", "event")
     else:
         add_log(f"  {info.drawn.name}  →  (palo inactivo)", "event")
     if info.revealed_checkpoint_index is not None and info.revealed_card is not None:
         add_log(f"  ◉ Checkpoint #{info.revealed_checkpoint_index+1}: {info.revealed_card.name}", "cp")
         if info.penalty_suit:
             owner = stp.get(info.penalty_suit)
-            add_log(f"  ⚠ Penalidad: {info.penalty_suit}{' ('+owner['name']+')' if owner else ''} retrocede 1", "penalty")
+            add_log(f"  ⚠ Penalidad: {info.penalty_suit}"
+                    f"{' ('+owner['name']+')' if owner else ''} retrocede 1", "penalty")
     if info.winner:
         owner = stp.get(info.winner)
-        add_log(f"  ★ GANADOR: {SUIT_SYMBOLS.get(info.winner,'')} {info.winner}{' ← '+owner['name'] if owner else ''}", "winner")
-        st.session_state.game_over = True; st.session_state.winner_suit = info.winner
+        add_log(f"  ★ GANADOR: {SUIT_SYMBOLS.get(info.winner,'')} {info.winner}"
+                f"{' ← '+owner['name'] if owner else ''}", "winner")
+        st.session_state.game_over = True
+        st.session_state.winner_suit = info.winner
 
 # ══════════════════════════════════════════════════════════════════════════
 # Main
@@ -360,13 +353,15 @@ def main():
     st.markdown('<div class="gold-line"></div>', unsafe_allow_html=True)
 
     if not st.session_state.setup_done:
-        st.markdown('<div style="text-align:center;padding:4rem 2rem;color:#5A5875">'
+        st.markdown('<div style="text-align:center;padding:4rem 2rem;color:#5A5575">'
                     '<div style="font-size:4rem;margin-bottom:1rem">🐴</div>'
                     '<div style="font-family:Cinzel,serif;font-size:1.1rem;color:#7A5E20;letter-spacing:0.1em">'
                     'Configura la partida en el panel izquierdo</div></div>', unsafe_allow_html=True)
         return
 
-    game = st.session_state.game; players = st.session_state.players; stp = st.session_state.suit_to_player
+    game = st.session_state.game
+    players = st.session_state.players
+    stp = st.session_state.suit_to_player
     col_board, col_side = st.columns([3, 1], gap="large")
 
     with col_board:
@@ -377,7 +372,8 @@ def main():
         st.markdown("<div style='margin-top:1rem'></div>", unsafe_allow_html=True)
         if not st.session_state.game_over:
             if st.button("▶  VOLTEAR CARTA", use_container_width=False):
-                do_step(); st.rerun()
+                do_step()
+                st.rerun()
         else:
             st.info("🏁 Carrera finalizada — inicia una nueva desde el panel izquierdo")
 
