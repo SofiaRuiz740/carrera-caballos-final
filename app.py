@@ -143,6 +143,11 @@ def progress_html(pos: int, color: str) -> str:
 # Sidebar
 # ══════════════════════════════════════════════════════════════════════════
 def render_sidebar():
+    # DEBUG temporal
+    import glob
+    pngs = glob.glob(os.path.join(PNG_CACHE_DIR, "*.png"))
+    st.sidebar.caption(f"PNG_DIR: {PNG_CACHE_DIR}")
+    st.sidebar.caption(f"PNGs encontrados: {len(pngs)}")
     with st.sidebar:
         st.markdown('<div class="section-title">⚑ NUEVA PARTIDA</div>', unsafe_allow_html=True)
         n_players = st.radio("Jugadores", [2, 3, 4], horizontal=True, key="sb_npl")
