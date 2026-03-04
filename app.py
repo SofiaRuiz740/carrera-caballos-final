@@ -558,7 +558,10 @@ def main():
     with left:
         st.markdown(f"#### TABLERO  <span style='color:{C_TEXT3}; font-style:italic; font-size:14px'>— Checkpoints arriba · Carriles abajo</span>", unsafe_allow_html=True)
         board_img = _draw_board_image(width=1100, height=700)
-        st.image(board_img, use_container_width=True)
+        try:
+            st.image(board_img, use_container_width=True)
+        except TypeError:
+            st.image(board_img, use_column_width=True)
 
     with right:
         # Última carta
