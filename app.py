@@ -2,9 +2,51 @@
 Carrera de Caballos — Baraja Española
 App Streamlit lista para desplegar en Render
 """
+import base64, os
 import streamlit as st
 from src.game import CarreraEspanola, TRACK_LEN
-from src.model import SUITS, RANK_NAMES
+from src.model import SUITS, RANK_NAMES, Card
+
+# ── Rutas e imágenes ───────────────────────────────────────────────────────
+BASE_DIR = os.path.abspath(".")
+PNG_DIR  = os.path.join(BASE_DIR, "assets", "png_cache")
+SVG_KEYS = {"Oros": "coins", "Copas": "cups", "Espadas": "swords", "Bastos": "clubs"}
+
+def _b64(path: str):
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+
+def _card_png(card: Card, size: str) -> str:
+    return os.path.join(PNG_DIR, f"card_{SVG_KEYS[card.suit]}_{card.rank:02d}.svg_{size}.png")
+
+def _back_png(size: str) -> str:
+    return os.path.join(PNG_DIR, f"card_back.svg_{size}.png")
+
+def card_img_html(card: Card, size: str, width: int, border_color: str = "#3A3A55") -> str:
+    b64 = _b64(_card_png(card, size))
+    if b64:
+        return (f'<img src="data:image/png;base64,{b64}" width="{width}" '
+                f'style="border-radius:6px;border:2px solid {border_color};display:block">')
+    sym   = SUIT_SYMBOLS.get(card.suit, "?")
+    color = SUIT_COLORS.get(card.suit, "#fff")
+    rname = RANK_NAMES.get(card.rank, str(card.rank))
+    return (f'<div style="width:{width}px;background:#1A1A24;border:1px solid {border_color};'
+            f'border-radius:6px;display:flex;flex-direction:column;align-items:center;'
+            f'justify-content:center;padding:8px;box-sizing:border-box">'
+            f'<div style="font-size:1.8rem;color:{color}">{sym}</div>'
+            f'<div style="font-size:.75rem;color:{color}">{rname}</div></div>')
+
+def back_img_html(size: str, width: int) -> str:
+    b64 = _b64(_back_png(size))
+    if b64:
+        return (f'<img src="data:image/png;base64,{b64}" width="{width}" '
+                f'style="border-radius:6px;border:1px solid #3A3A55;display:block">')
+    return (f'<div style="width:{width}px;height:{int(width*1.4)}px;background:#1A1A24;'
+            f'border:1px solid #3A3A55;border-radius:6px;display:flex;align-items:center;'
+            f'justify-content:center;font-size:2rem;color:#2A2A3D">🂠</div>')
 
 # ── Constantes visuales ────────────────────────────────────────────────────
 SUIT_SYMBOLS = {"Oros": "◈", "Copas": "♥", "Espadas": "⚔", "Bastos": "⌘"}
@@ -298,7 +340,6 @@ def render_sidebar():
         if st.session_state.setup_done:
             st.markdown('<div class="btn-sec">', unsafe_allow_html=True)
             if st.button("↺  Reiniciar partida", use_container_width=True):
-                _start_game(players_cfg, n_horses)
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -345,20 +386,16 @@ def render_checkpoints(game: CarreraEspanola):
             if game.revealed[i]:
                 card  = game.checkpoints[i]
                 color = SUIT_COLORS.get(card.suit, "#fff")
-                sym   = SUIT_SYMBOLS.get(card.suit, "?")
-                rname = RANK_NAMES.get(card.rank, str(card.rank))
-                st.markdown(f"""
-                <div class="cp-card" style="border-color:{color}55">
-                    <div class="cp-suit-sym" style="color:{color}">{sym}</div>
-                    <div class="cp-rank" style="color:{color}">{rname}</div>
-                    <div class="cp-num">{i+1}</div>
-                </div>""", unsafe_allow_html=True)
+                img   = card_img_html(card, "88x124", 80, color + "99")
             else:
-                st.markdown(f"""
-                <div class="cp-card">
-                    <div style="font-size:1.8rem;color:#2A2A3D">🂠</div>
-                    <div class="cp-num">{i+1}</div>
-                </div>""", unsafe_allow_html=True)
+                img = back_img_html("88x124", 80)
+
+            st.markdown(
+                f'<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
+                f'{img}'
+                f'<div style="font-size:0.6rem;color:#7A5E20;font-family:Cinzel,serif">{i+1}</div>'
+                f'</div>',
+                unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -383,7 +420,6 @@ def render_lanes(game: CarreraEspanola, suit_to_player: dict):
             '<span style="color:#3A3A55;font-size:0.7rem;font-style:italic">sin dueño</span>'
         )
 
-        # Cabecera + celdas en una sola fila usando columns
         label_col, *cell_cols = st.columns([1.2] + [1] * (TRACK_LEN + 1))
 
         with label_col:
@@ -399,12 +435,18 @@ def render_lanes(game: CarreraEspanola, suit_to_player: dict):
                 is_horse = (p == pos)
                 is_meta  = (p == TRACK_LEN)
 
-                if is_meta:
+                if is_horse and not is_meta:
+                    horse_card = Card(rank=11, suit=suit)
+                    b64 = _b64(_card_png(horse_card, "64x90"))
+                    if b64:
+                        content = (f'<img src="data:image/png;base64,{b64}" width="34" '
+                                   f'style="border-radius:4px;display:block">')
+                    else:
+                        content = f'<div style="font-size:1.4rem">{sym}</div>'
+                    bg = f"background:{color}33"
+                elif is_meta:
                     bg      = f"background:{color}22;border-left:3px solid {color}"
                     content = f'<div style="font-size:0.5rem;color:{color};font-family:Cinzel,serif">META</div>'
-                elif is_horse:
-                    bg      = f"background:{color}33"
-                    content = f'<div style="font-size:1.4rem">{sym}</div>'
                 else:
                     bg      = ""
                     content = f'<div style="color:#2A2A3D;font-size:0.58rem">{p}</div>'
@@ -451,25 +493,20 @@ def render_last_card(card):
     st.markdown('<div class="section-title">ÚLTIMA CARTA</div>',
                 unsafe_allow_html=True)
     if card is None:
-        st.markdown("""
-        <div class="card-display">
-            <div style="font-size:3rem;color:#2A2A3D">🂠</div>
-            <div style="color:#3A3A55;font-style:italic;font-size:0.9rem;margin-top:0.5rem">
-                Voltea una carta para comenzar
-            </div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="text-align:center">{back_img_html("240x340", 180)}</div>',
+            unsafe_allow_html=True)
         return
 
     color = SUIT_COLORS.get(card.suit, "#fff")
-    sym   = SUIT_SYMBOLS.get(card.suit, "?")
     rname = RANK_NAMES.get(card.rank, str(card.rank))
+    img   = card_img_html(card, "240x340", 180, color + "99")
 
-    st.markdown(f"""
-    <div class="card-display" style="border-color:{color}55">
-        <div class="card-sym-big" style="color:{color}">{sym}</div>
-        <div class="card-name">{rname}</div>
-        <div class="card-suit-name">de {card.suit}</div>
-    </div>""", unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="text-align:center">{img}'
+        f'<div style="font-size:1rem;font-weight:600;color:#F0EDE8;margin-top:6px">'
+        f'{rname} de {card.suit}</div></div>',
+        unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════
