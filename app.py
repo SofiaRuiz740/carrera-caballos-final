@@ -9,7 +9,7 @@ from src.model import SUITS, RANK_NAMES, Card
 
 # ── Rutas ──────────────────────────────────────────────────────────────────
 # Siempre relativo al directorio donde se corre: streamlit run app.py
-BASE_DIR      = os.path.abspath(".")
+BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 PNG_CACHE_DIR = os.path.join(BASE_DIR, "assets", "png_cache")
 
 SVG_KEYS = {"Oros": "coins", "Copas": "cups", "Espadas": "swords", "Bastos": "clubs"}
