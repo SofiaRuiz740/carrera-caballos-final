@@ -18,7 +18,7 @@ SVG_KEYS = {"Oros": "coins", "Copas": "cups", "Espadas": "swords", "Bastos": "cl
 # ── Conversión SVG → PNG con cairosvg ─────────────────────────────────────
 def _svg_to_b64(svg_filename: str, w: int, h: int, preferred_size: str = None) -> str | None:
     # 1. Buscar PNG pre-generado con tamaños conocidos
-    for size in [preferred_size, "88x124", "240x340", "64x90"]:
+    for size in [preferred_size, "240x340", "88x124", "64x90"]:
         if not size:
             continue
         candidate = os.path.join(PNG_CACHE_DIR, f"{svg_filename}_{size}.png")
