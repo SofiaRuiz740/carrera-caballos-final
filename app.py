@@ -2,56 +2,75 @@
 Carrera de Caballos — Baraja Española
 App Streamlit lista para desplegar en Render
 """
-import base64, os
+import base64, io, os
 import streamlit as st
 from src.game import CarreraEspanola, TRACK_LEN
 from src.model import SUITS, RANK_NAMES, Card
 
 # ── Rutas ──────────────────────────────────────────────────────────────────
-# Siempre relativo al directorio donde se corre: streamlit run app.py
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
+SVG_DIR       = os.path.join(BASE_DIR, "assets", "svg")
 PNG_CACHE_DIR = os.path.join(BASE_DIR, "assets", "png_cache")
+os.makedirs(PNG_CACHE_DIR, exist_ok=True)
 
 SVG_KEYS = {"Oros": "coins", "Copas": "cups", "Espadas": "swords", "Bastos": "clubs"}
 
-# ── Imágenes ───────────────────────────────────────────────────────────────
-# Nombres reales en disco: card_coins_01.svg_88x124.png
-def _png_path(card: Card, size: str) -> str:
-    name = f"card_{SVG_KEYS[card.suit]}_{card.rank:02d}.svg_{size}.png"
-    return os.path.join(PNG_CACHE_DIR, name)
+# ── Conversión SVG → PNG con cairosvg ─────────────────────────────────────
+def _svg_to_b64(svg_filename: str, w: int, h: int, preferred_size: str = None) -> str | None:
+    # 1. Buscar PNG pre-generado con tamaños conocidos
+    for size in [preferred_size, "88x124", "240x340", "64x90"]:
+        if not size:
+            continue
+        candidate = os.path.join(PNG_CACHE_DIR, f"{svg_filename}_{size}.png")
+        if os.path.exists(candidate):
+            try:
+                with open(candidate, "rb") as f:
+                    return base64.b64encode(f.read()).decode()
+            except Exception:
+                continue
 
-def _back_path(size: str) -> str:
-    return os.path.join(PNG_CACHE_DIR, f"card_back.svg_{size}.png")
-
-def _b64(path: str) -> str | None:
-    if not os.path.exists(path):
+    # 2. Fallback: convertir desde SVG con cairosvg
+    svg_path = os.path.join(SVG_DIR, svg_filename)
+    if not os.path.exists(svg_path):
         return None
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
+    cache_key  = f"{svg_filename}_{w}x{h}.png"
+    cache_path = os.path.join(PNG_CACHE_DIR, cache_key)
+    if not os.path.exists(cache_path):
+        try:
+            import cairosvg
+            cairosvg.svg2png(url=svg_path, write_to=cache_path,
+                             output_width=w, output_height=h)
+        except Exception:
+            return None
+    try:
+        with open(cache_path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except Exception:
+        return None
 
-def card_img_html(card: Card, size: str, width: int, border_color: str = "#3A3A55") -> str:
-    b64 = _b64(_png_path(card, size))
+def _card_svg(card: Card) -> str:
+    return f"card_{SVG_KEYS[card.suit]}_{card.rank:02d}.svg"
+
+def card_img_html(card: Card, w: int, h: int, border_color: str = "#3A3A55") -> str:
+    b64 = _svg_to_b64(_card_svg(card), w, h)
     if b64:
-        return (f'<img src="data:image/png;base64,{b64}" width="{width}" '
+        return (f'<img src="data:image/png;base64,{b64}" width="{w}" '
                 f'style="border-radius:6px;border:2px solid {border_color};display:block">')
-    # fallback texto
     sym   = SUIT_SYMBOLS.get(card.suit, "?")
     color = SUIT_COLORS.get(card.suit, "#fff")
     rname = RANK_NAMES.get(card.rank, str(card.rank))
-    h = int(width * 1.4)
-    return (f'<div style="width:{width}px;height:{h}px;background:#1A1A24;'
+    return (f'<div style="width:{w}px;height:{h}px;background:#1A1A24;'
             f'border:1px solid {border_color};border-radius:6px;display:flex;'
             f'flex-direction:column;align-items:center;justify-content:center">'
             f'<div style="font-size:1.4rem;color:{color}">{sym}</div>'
             f'<div style="font-size:.7rem;color:{color}">{rname}</div></div>')
 
-def back_img_html(size: str, width: int) -> str:
-    b64 = _b64(_back_path(size))
+def back_img_html(w: int, h: int) -> str:
+    b64 = _svg_to_b64("card_back.svg", w, h)
     if b64:
-        return (f'<img src="data:image/png;base64,{b64}" width="{width}" '
+        return (f'<img src="data:image/png;base64,{b64}" width="{w}" '
                 f'style="border-radius:6px;border:1px solid #3A3A55;display:block">')
-    h = int(width * 1.4)
-    return (f'<div style="width:{width}px;height:{h}px;background:#1A1A24;'
+    return (f'<div style="width:{w}px;height:{h}px;background:#1A1A24;'
             f'border:1px solid #3A3A55;border-radius:6px;display:flex;'
             f'align-items:center;justify-content:center;font-size:2rem;color:#2A2A3D">🂠</div>')
 
@@ -143,11 +162,6 @@ def progress_html(pos: int, color: str) -> str:
 # Sidebar
 # ══════════════════════════════════════════════════════════════════════════
 def render_sidebar():
-    # DEBUG temporal
-    import glob
-    pngs = glob.glob(os.path.join(PNG_CACHE_DIR, "*.png"))
-    st.sidebar.caption(f"PNG_DIR: {PNG_CACHE_DIR}")
-    st.sidebar.caption(f"PNGs encontrados: {len(pngs)}")
     with st.sidebar:
         st.markdown('<div class="section-title">⚑ NUEVA PARTIDA</div>', unsafe_allow_html=True)
         n_players = st.radio("Jugadores", [2, 3, 4], horizontal=True, key="sb_npl")
@@ -206,9 +220,9 @@ def render_checkpoints(game: CarreraEspanola):
             if game.revealed[i]:
                 card  = game.checkpoints[i]
                 color = SUIT_COLORS.get(card.suit, "#fff")
-                img   = card_img_html(card, "88x124", 80, color + "99")
+                img   = card_img_html(card, 80, 112, color + "99")
             else:
-                img = back_img_html("88x124", 80)
+                img = back_img_html(80, 112)
             st.markdown(
                 f'<div style="display:flex;flex-direction:column;align-items:center;gap:4px">'
                 f'{img}<div style="font-size:0.6rem;color:#7A5E20;font-family:Cinzel,serif">{i+1}</div>'
@@ -234,11 +248,7 @@ def render_lanes(game: CarreraEspanola, suit_to_player: dict):
             with col:
                 is_horse = (p == pos); is_meta = (p == TRACK_LEN)
                 if is_horse and not is_meta:
-                    horse_b64 = _b64(_png_path(Card(rank=11, suit=suit), "64x90"))
-                    if not horse_b64:
-                        horse_b64 = _b64(_png_path(Card(rank=11, suit=suit), "88x124"))
-                    content = (f'<img src="data:image/png;base64,{horse_b64}" width="34" style="border-radius:4px;display:block">'
-                               if horse_b64 else f'<div style="font-size:1.4rem">{sym}</div>')
+                    content = card_img_html(Card(rank=11, suit=suit), 34, 48)
                     bg = f"background:{color}33"
                 elif is_meta:
                     bg = f"background:{color}22;border-left:3px solid {color}"
@@ -273,13 +283,11 @@ def render_players_panel(game: CarreraEspanola, players: list):
 def render_last_card(card):
     st.markdown('<div class="section-title">ÚLTIMA CARTA</div>', unsafe_allow_html=True)
     if card is None:
-        st.markdown(f'<div style="text-align:center">{back_img_html("240x340", 180)}</div>',
-                    unsafe_allow_html=True)
+        st.markdown(f'<div style="text-align:center">{back_img_html(180, 252)}</div>', unsafe_allow_html=True)
         return
     color = SUIT_COLORS.get(card.suit, "#fff")
     rname = RANK_NAMES.get(card.rank, str(card.rank))
-    img   = card_img_html(card, "240x340", 180, color + "99")
-    st.markdown(f'<div style="text-align:center">{img}'
+    st.markdown(f'<div style="text-align:center">{card_img_html(card, 180, 252, color+"99")}'
                 f'<div style="font-size:1rem;font-weight:600;color:#F0EDE8;margin-top:6px">'
                 f'{rname} de {card.suit}</div></div>', unsafe_allow_html=True)
 
